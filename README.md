@@ -8,8 +8,8 @@ O grande diferencial desta package é que ela **não depende da package `DBMS_CR
 
 No repositório você encontrará:
 
-* **Pasta `doc/`**: Contém o manual técnico completo ([`doc/MANUAL.md`](MANUAL.md)), detalhando todas as funções, sobrecargas de tipos de dados (`VARCHAR2`, `CLOB`, `BLOB`, `NUMBER`, `RAW`), tabela de erros e exceções, boas práticas de segurança, geração de IV e exemplos de integração com Triggers e Views.
-* **Pasta `exemplo/`**: Contém um script PL/SQL ([`exemplo/demo_criptopack.sql`](demo_criptopack.sql)) de demonstração pronta para execução (por exemplo, via atalho F5 no Oracle SQL Developer). O script testa e exibe a saída de todas as funções de hash, CRC-32 e variações do AES-128/192/256 no console (`DBMS_OUTPUT`).
+* **Pasta `doc/`**: Contém o manual técnico completo ([`MANUAL.md`](doc/MANUAL.md)), detalhando todas as funções, sobrecargas de tipos de dados (`VARCHAR2`, `CLOB`, `BLOB`, `NUMBER`, `RAW`), tabela de erros e exceções, boas práticas de segurança, geração de IV e exemplos de integração com Triggers e Views.
+* **Pasta `exemplo/`**: Contém um script PL/SQL ([`demo_criptopack.sql`](exemplo/demo_criptopack.sql)) de demonstração pronta para execução (por exemplo, via atalho F5 no Oracle SQL Developer). O script testa e exibe a saída de todas as funções de hash, CRC-32 e variações do AES-128/192/256 no console (`DBMS_OUTPUT`).
 
 ---
 
