@@ -25,6 +25,12 @@ DECLARE
   v_dec_clob CLOB;
   v_dec_blob BLOB;
   v_dec_raw RAW(32767);
+  v_envelope_autenticado VARCHAR2(32767);
+  v_texto_autenticado VARCHAR2(100);
+  v_envelope_aut_clob CLOB;
+  v_dec_aut_clob CLOB;
+  v_envelope_aut_blob BLOB;
+  v_dec_aut_blob BLOB;
 
   c_iv CONSTANT VARCHAR2(16) := '1234567890ABCDEF';
   c_chave128 CONSTANT VARCHAR2(16) := '0123456789ABCDEF';
@@ -432,6 +438,60 @@ BEGIN
     ELSE 'DIVERGÊNCIA'
   END);
 
+  -- API autenticada: MAC é validado antes da decifragem/padding.
+  v_envelope_autenticado := criptopack.cripto_aes256_autenticado(
+    p_texto_varchar2 => v_texto,
+    p_chave => c_chave256,
+    p_iv => c_iv
+  );
+  v_texto_autenticado := criptopack.descripto_aes256_autenticado(
+    p_envelope_varchar2 => v_envelope_autenticado,
+    p_chave => c_chave256
+  );
+  mostrar('AES-256 autenticado', CASE WHEN v_texto_autenticado = v_texto
+    THEN 'round-trip OK'
+    ELSE 'DIVERGÊNCIA'
+  END);
+
+  v_envelope_aut_clob := criptopack.cripto_aes256_autenticado(
+    p_texto_clob => v_clob, p_chave => c_chave256, p_iv => c_iv
+  );
+  v_dec_aut_clob := criptopack.descripto_aes256_autenticado(
+    p_envelope_clob => v_envelope_aut_clob, p_chave => c_chave256
+  );
+  mostrar('AES-256 autenticado CLOB', CASE WHEN DBMS_LOB.COMPARE(v_dec_aut_clob, v_clob) = 0
+    THEN 'round-trip OK'
+    ELSE 'DIVERGÊNCIA'
+  END);
+
+  v_envelope_aut_blob := criptopack.cripto_aes256_autenticado(
+    p_texto_blob => v_blob, p_chave => c_chave256, p_iv => c_iv
+  );
+  v_dec_aut_blob := criptopack.descripto_aes256_autenticado(
+    p_envelope_blob => v_envelope_aut_blob, p_chave => c_chave256
+  );
+  mostrar('AES-256 autenticado BLOB', CASE WHEN DBMS_LOB.COMPARE(v_dec_aut_blob, v_blob) = 0
+    THEN 'round-trip OK'
+    ELSE 'DIVERGÊNCIA'
+  END);
+
+  -- Alteração no MAC deve falhar com o mesmo erro genérico de envelope inválido.
+  BEGIN
+    v_texto_autenticado := criptopack.descripto_aes256_autenticado(
+      p_envelope_varchar2 => SUBSTR(v_envelope_autenticado, 1, LENGTH(v_envelope_autenticado) - 1)
+        || CASE WHEN SUBSTR(v_envelope_autenticado, -1) = '0' THEN '1' ELSE '0' END,
+      p_chave => c_chave256
+    );
+    mostrar('MAC adulterado', 'ERRO: envelope aceito');
+  EXCEPTION
+    WHEN OTHERS THEN
+      IF SQLCODE = -20017 THEN
+        mostrar('MAC adulterado', 'rejeitado (ORA-20017)');
+      ELSE
+        RAISE;
+      END IF;
+  END;
+
   -- Libera os LOBs temporários alocados durante a demonstração.
   DBMS_LOB.FREETEMPORARY(v_clob);
   DBMS_LOB.FREETEMPORARY(v_blob);
@@ -441,6 +501,10 @@ BEGIN
   DBMS_LOB.FREETEMPORARY(v_aes192_blob);
   DBMS_LOB.FREETEMPORARY(v_aes256_clob);
   DBMS_LOB.FREETEMPORARY(v_aes256_blob);
+  DBMS_LOB.FREETEMPORARY(v_envelope_aut_clob);
+  DBMS_LOB.FREETEMPORARY(v_dec_aut_clob);
+  DBMS_LOB.FREETEMPORARY(v_envelope_aut_blob);
+  DBMS_LOB.FREETEMPORARY(v_dec_aut_blob);
 EXCEPTION
   WHEN OTHERS THEN
     IF DBMS_LOB.ISTEMPORARY(v_dec_clob) = 1 THEN DBMS_LOB.FREETEMPORARY(v_dec_clob); END IF;
@@ -452,6 +516,10 @@ EXCEPTION
     IF DBMS_LOB.ISTEMPORARY(v_aes192_blob) = 1 THEN DBMS_LOB.FREETEMPORARY(v_aes192_blob); END IF;
     IF DBMS_LOB.ISTEMPORARY(v_aes256_clob) = 1 THEN DBMS_LOB.FREETEMPORARY(v_aes256_clob); END IF;
     IF DBMS_LOB.ISTEMPORARY(v_aes256_blob) = 1 THEN DBMS_LOB.FREETEMPORARY(v_aes256_blob); END IF;
+    IF DBMS_LOB.ISTEMPORARY(v_envelope_aut_clob) = 1 THEN DBMS_LOB.FREETEMPORARY(v_envelope_aut_clob); END IF;
+    IF DBMS_LOB.ISTEMPORARY(v_dec_aut_clob) = 1 THEN DBMS_LOB.FREETEMPORARY(v_dec_aut_clob); END IF;
+    IF DBMS_LOB.ISTEMPORARY(v_envelope_aut_blob) = 1 THEN DBMS_LOB.FREETEMPORARY(v_envelope_aut_blob); END IF;
+    IF DBMS_LOB.ISTEMPORARY(v_dec_aut_blob) = 1 THEN DBMS_LOB.FREETEMPORARY(v_dec_aut_blob); END IF;
     IF DBMS_LOB.ISTEMPORARY(v_dec_blob) = 1 THEN DBMS_LOB.FREETEMPORARY(v_dec_blob); END IF;
     RAISE;
 END;

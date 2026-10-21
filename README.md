@@ -1,4 +1,4 @@
-# CRIPTOpack
+# CRIPTOpack 1.1
 
 O **CRIPTOpack** é uma package PL/SQL nativa para Oracle Database que fornece uma API completa para geração de Hashes, cálculo de CRC e Criptografia/Descriptografia simétrica (AES). 
 
@@ -112,10 +112,24 @@ Para uma demonstração completa com todos os overloads e tipos de dados, execut
 
 ## ⚠️ Recomendações de Segurança
 * **Hashes Rápidos vs. Senhas:** Embora a package forneça SHA-2/SHA-3 rápidos, estes algoritmos não devem ser usados sozinhos para armazenamento seguro de senhas. Para senhas de usuários, utilize funções de derivação de chaves (KDF) com salt (ex: PBKDF2, Bcrypt ou Argon2).
-* **Vetor de Inicialização (IV):** Ao usar o modo AES-CBC, utilize um IV único e imprevisível para cada operação de cifragem.
-* **Autenticidade:** O modo CBC não fornece autenticação. Para proteger a integridade dos dados cifrados (evitando ataques de manipulação), implemente um código de autenticação de mensagem (MAC) separadamente.
+* **Cifragem autenticada:** Para novos usos, prefira `cripto_aes128/192/256_autenticado` e suas funções de decifragem correspondentes. Elas oferecem sobrecargas `VARCHAR2`, `CLOB` e `BLOB`, usam Encrypt-then-MAC (HMAC-SHA-256), verificam a autenticidade antes de decifrar e devolvem erro uniforme para envelope inválido.
+* **Chaves e IV:** Use chaves aleatórias com o tamanho exigido pela variante AES; não use senhas humanas diretamente. Gere um IV imprevisível e único por cifragem. Na API autenticada, o IV acompanha o ciphertext dentro do envelope versionado.
+* **CBC legado:** As funções `cripto_aes*` sem sufixo autenticado permanecem por compatibilidade, mas CBC sozinho não autentica dados. Não use esses métodos sem adicionar uma autenticação externa segura.
 
 ---
+
+## 🕘 Histórico de Versões
+
+### 1.1
+* Adicionadas funções AES-128/192/256 autenticadas com HMAC-SHA-256 no esquema Encrypt-then-MAC, disponíveis para `VARCHAR2`, `CLOB` e `BLOB`.
+* Criado envelope versionado contendo cabeçalho, IV, ciphertext e MAC; a autenticidade é verificada antes da decifragem.
+* Documentação de segurança do IV corrigida: `SYS_GUID()` não é recomendado como fonte criptográfica, e o IV deve ser gerado por CSPRNG.
+* Mantidos os métodos anteriores por compatibilidade.
+
+### 1.0
+* Versão inicial com hashes MD5, SHA-1, SHA-2 e SHA-3, além de CRC-32/ISO-HDLC.
+* Adicionada cifragem e decifragem AES-128/192/256 em CBC com padding PKCS#7.
+* Implementadas sobrecargas para tipos Oracle como `VARCHAR2`, `CLOB`, `BLOB`, `NUMBER` e `RAW`, sem dependência de `DBMS_CRYPTO`.
 
 ## 📄 Licença
 

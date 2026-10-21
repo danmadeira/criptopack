@@ -1,0 +1,84 @@
+=== HASHES E CRC-32 ===
+hash_md5(VARCHAR2)             = 8ef1b1b74aa284dbef21d29edbcf733d
+hash_md5(CLOB)                 = 8ef1b1b74aa284dbef21d29edbcf733d
+hash_md5(BLOB)                 = 8ef1b1b74aa284dbef21d29edbcf733d
+hash_md5(NUMBER)               = 0fbb367a556aeaa1c55cf095a49bf1b0
+hash_sha1(VARCHAR2)            = 6d8063215158431f7e4a9ef18690a3fc4e95c9d8
+hash_sha1(CLOB)                = 6d8063215158431f7e4a9ef18690a3fc4e95c9d8
+hash_sha1(BLOB)                = 6d8063215158431f7e4a9ef18690a3fc4e95c9d8
+hash_sha1(NUMBER)              = c739b904d6387c7ad4953f64ddf9faf622d78ce6
+hash_sha256(VARCHAR2)          = 87c045f273ac8b20332b984df8fcfe93dc09125107a18169df455b40a88d41f0
+hash_sha256(CLOB)              = 87c045f273ac8b20332b984df8fcfe93dc09125107a18169df455b40a88d41f0
+hash_sha256(BLOB)              = 87c045f273ac8b20332b984df8fcfe93dc09125107a18169df455b40a88d41f0
+hash_sha256(NUMBER)            = ee6cf74df4bff3b4a05c1102e456bb3c714c964c708b706356f938de48db4b62
+hash_sha384(VARCHAR2)          = f342de5314a03b836abeb73b897ca14e4e90da63a47d0d17e02dad1a1df4294467f8ae1985c2cc087645a6367995c6d9
+hash_sha384(CLOB)              = f342de5314a03b836abeb73b897ca14e4e90da63a47d0d17e02dad1a1df4294467f8ae1985c2cc087645a6367995c6d9
+hash_sha384(BLOB)              = f342de5314a03b836abeb73b897ca14e4e90da63a47d0d17e02dad1a1df4294467f8ae1985c2cc087645a6367995c6d9
+hash_sha384(NUMBER)            = 62fc017c10326004b5265fe4167393528cd4598c0dbfbe40763fb48c8885166cb0a2f448eb5515f478637e3fc770b357
+hash_sha512(VARCHAR2)          = d49fcfed6b7b7709bb774edf304785122eb29b6a5e828b130d368d5e0171b2899148a39a7b6c3c4b8084207eebc3e88baaf0b556940211f4eb8c17fd905568b3
+hash_sha512(CLOB)              = d49fcfed6b7b7709bb774edf304785122eb29b6a5e828b130d368d5e0171b2899148a39a7b6c3c4b8084207eebc3e88baaf0b556940211f4eb8c17fd905568b3
+hash_sha512(BLOB)              = d49fcfed6b7b7709bb774edf304785122eb29b6a5e828b130d368d5e0171b2899148a39a7b6c3c4b8084207eebc3e88baaf0b556940211f4eb8c17fd905568b3
+hash_sha512(NUMBER)            = a2490387fb000fe6ac762a2da970d4564ea6887e2a788196d5a408aed06aef193ef5f363ca6fdfb9bc41bbbaf1481c09c26c2ef5aa6a29940b1096d44c381649
+hash_sha3_224(VARCHAR2)        = 33bd9a870e0d7eeff865a52d8aece2066b45745049b300e5fe2f19c1
+hash_sha3_224(CLOB)            = 33bd9a870e0d7eeff865a52d8aece2066b45745049b300e5fe2f19c1
+hash_sha3_224(BLOB)            = 33bd9a870e0d7eeff865a52d8aece2066b45745049b300e5fe2f19c1
+hash_sha3_224(NUMBER)          = ef3e9b34a1791832f7657e1e02094a681cf748555789fe7f5a355c76
+hash_sha3_224(vazio)           = 6b4e03423667dbb73b6e15454f0eb1abd4597f9a1b078e3f5b5a6bc7
+hash_sha3_256(VARCHAR2)        = 3797790699d40b6b9024ea28140e8011a67a7061358cef720a731c2b9ba9eac1
+hash_sha3_256(CLOB)            = 3797790699d40b6b9024ea28140e8011a67a7061358cef720a731c2b9ba9eac1
+hash_sha3_256(BLOB)            = 3797790699d40b6b9024ea28140e8011a67a7061358cef720a731c2b9ba9eac1
+hash_sha3_256(NUMBER)          = 882e987782199428376b02730b6421ffb9c12b3551e8d57a0a83274be06dd949
+hash_sha3_256(vazio)           = a7ffc6f8bf1ed76651c14756a061d662f580ff4de43b49fa82d80a4b80f8434a
+hash_sha3_384(VARCHAR2)        = f03e7a532b9c6ea727e09b96d1ec978340d65e29e267d86f8fbb1b1d4c5b76a59d7a6da738338f802d2daac9f50eb9ae
+hash_sha3_384(CLOB)            = f03e7a532b9c6ea727e09b96d1ec978340d65e29e267d86f8fbb1b1d4c5b76a59d7a6da738338f802d2daac9f50eb9ae
+hash_sha3_384(BLOB)            = f03e7a532b9c6ea727e09b96d1ec978340d65e29e267d86f8fbb1b1d4c5b76a59d7a6da738338f802d2daac9f50eb9ae
+hash_sha3_384(NUMBER)          = e65f66b06927d8a17058e96676965521f2a46491702287bf837b2650e0919b267a61aa08d12ee45e081ca48480e3baa8
+hash_sha3_512(VARCHAR2)        = 81b12b396493a7429a911e01063671b411379896f98a640dbf59384db8d63d79b79dae32a5f0f1ce29bbc777fda4581a3de87150839b064528ef92ad3cd5d221
+hash_sha3_512(CLOB)            = 81b12b396493a7429a911e01063671b411379896f98a640dbf59384db8d63d79b79dae32a5f0f1ce29bbc777fda4581a3de87150839b064528ef92ad3cd5d221
+hash_sha3_512(BLOB)            = 81b12b396493a7429a911e01063671b411379896f98a640dbf59384db8d63d79b79dae32a5f0f1ce29bbc777fda4581a3de87150839b064528ef92ad3cd5d221
+hash_sha3_512(NUMBER)          = cda36cdf563aed784470f8e3fa429c8a095d9cbf1e9906fb758c909c9cf5c4d320cde46e597a72d2a89cc80e0ee9df8f78fbdc5883ae4a86e3a4c3ce7ad6d89a
+hash_sha3_512(vazio)           = a69f73cca23a9ac5c8b567dc185a756e97c982164fe25859e0d1dcc1475c80a615b2123af1f5f94c11e3e9402c3ac558f500199d95b6d3e301758586281dcd26
+hash_crc32(VARCHAR2)           = ef7fe563
+hash_crc32(CLOB)               = ef7fe563
+hash_crc32(BLOB)               = ef7fe563
+hash_crc32(NUMBER)             = af040038
+
+=== AES-128-CBC/PKCS#7 ===
+cripto_aes128(VARCHAR2)        = 399726465666EE3FC519DA880C1111224C77FF5FA06F8561F4571D9B510DC017
+descripto_aes128(VARCHAR2)     = Demonstração CRIPTOpack
+cripto_aes128(CLOB)            = 399726465666EE3FC519DA880C1111224C77FF5FA06F8561F4571D9B510DC017
+descripto_aes128(CLOB)         = Demonstração CRIPTOpack
+cripto_aes128(BLOB) bytes      = 32
+descripto_aes128(BLOB)         = round-trip OK
+cripto_aes128(NUMBER)          = E968DF3276C8055B758C5077A1C7A363
+descripto_aes128(NUMBER)       = 12345.678
+cripto_aes128(RAW)             = E34A9561ADA3DA30E65AC0C33960ECBCCC402ADFE62F1D57426EB3D668B8BC9A
+descripto_aes128(RAW)          = round-trip OK
+
+=== AES-192-CBC/PKCS#7 ===
+cripto_aes192(VARCHAR2)        = 387676079B81C7184418E266515352149379022C3859FF1D3347D4B1910DC205
+descripto_aes192(VARCHAR2)     = Demonstração CRIPTOpack
+cripto_aes192(CLOB)            = 387676079B81C7184418E266515352149379022C3859FF1D3347D4B1910DC205
+descripto_aes192(CLOB)         = Demonstração CRIPTOpack
+cripto_aes192(BLOB) bytes      = 32
+descripto_aes192(BLOB)         = round-trip OK
+cripto_aes192(NUMBER)          = 35F124E5E34B1FC35103E6195B8D2044
+descripto_aes192(NUMBER)       = 12345.678
+cripto_aes192(RAW)             = 4D1325F8D967DF8F26E77AC40CDAE25CF02E4C419326DA5D6A9A8FD8EB88708C
+descripto_aes192(RAW)          = round-trip OK
+
+=== AES-256-CBC/PKCS#7 ===
+cripto_aes256(VARCHAR2)        = 4BA53B158F5FC7532280A3BC53B6342E75D97501B69BAA21E849C792F75D2CDF
+descripto_aes256(VARCHAR2)     = Demonstração CRIPTOpack
+cripto_aes256(CLOB)            = 4BA53B158F5FC7532280A3BC53B6342E75D97501B69BAA21E849C792F75D2CDF
+descripto_aes256(CLOB)         = Demonstração CRIPTOpack
+cripto_aes256(BLOB) bytes      = 32
+descripto_aes256(BLOB)         = round-trip OK
+cripto_aes256(NUMBER)          = FF2874215AECD1878746726504575D1E
+descripto_aes256(NUMBER)       = 12345.678
+cripto_aes256(RAW)             = 99EAB25E24C30E85AA94173066BC058FD031D63D8CC0F56668DC30E86EFA4210
+descripto_aes256(RAW)          = round-trip OK
+AES-256 autenticado            = round-trip OK
+AES-256 autenticado CLOB       = round-trip OK
+AES-256 autenticado BLOB       = round-trip OK
+MAC adulterado                 = rejeitado (ORA-20017)

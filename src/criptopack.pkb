@@ -1,19 +1,21 @@
 CREATE OR REPLACE PACKAGE BODY criptopack AS
   /**
    * @author Daniel Madeira
-   * @version 1.0
+  * @version 1.1
    * @date 2026-10-21
    * @brief Descreve a implementação de hashes, CRC e criptografia AES.
    *
    * O corpo implementa MD5, SHA-1, SHA-256, SHA3-224, SHA3-256, SHA3-384,
    * SHA3-512, SHA-384, SHA-512,
-   * CRC-32/ISO-HDLC e AES-128/192/256-CBC com padding PKCS#7, incluindo
-   * rotinas internas de processamento de bytes e LOBs. Não depende de
+  * CRC-32/ISO-HDLC e AES-128/192/256-CBC com padding PKCS#7, incluindo
+  * variantes Encrypt-then-MAC com HMAC-SHA-256 e rotinas internas de
+  * processamento de bytes e LOBs. Não depende de
    * DBMS_CRYPTO. Textos usam UTF-8; hashes e ciphertexts textuais usam
    * hexadecimal; BLOB e RAW preservam bytes binários.
    *
-   * CBC não autentica o ciphertext: o chamador deve usar IV imprevisível
-   * e único por operação e proteger a integridade separadamente. MD5 e
+  * CBC legado não autentica o ciphertext; as variantes autenticadas
+  * verificam HMAC antes da decifragem. Use IV imprevisível e único.
+  * MD5 e
    * SHA não são KDFs e não devem ser usados para derivar chave de senha.
    *
    * @return Implementações executáveis e rotinas privadas da package.
@@ -552,6 +554,288 @@ CREATE OR REPLACE PACKAGE BODY criptopack AS
     END IF;
     RETURN l_raw;
   END aes_key_raw;
+
+  FUNCTION hash_blob_sha256_internal(p_data BLOB) RETURN VARCHAR2;
+  FUNCTION aes_string_blob(p_text VARCHAR2) RETURN BLOB;
+
+  FUNCTION hmac_sha256_blob(p_key RAW, p_data BLOB) RETURN RAW IS
+    l_key RAW(64) := p_key;
+    l_inner_pad RAW(64);
+    l_outer_pad RAW(64);
+    l_inner_hex VARCHAR2(128);
+    l_outer_hex VARCHAR2(128);
+    l_inner BLOB;
+    l_outer BLOB;
+    l_digest VARCHAR2(64);
+    l_result RAW(32);
+  BEGIN
+    IF NVL(UTL_RAW.LENGTH(l_key), 0) > 64 THEN
+      RAISE_APPLICATION_ERROR(-20017, 'Chave interna HMAC inválida.');
+    END IF;
+    FOR i IN 1 .. 64 LOOP
+      DECLARE
+        l_byte PLS_INTEGER := 0;
+      BEGIN
+        IF i <= NVL(UTL_RAW.LENGTH(l_key), 0) THEN
+          l_byte := aes_byte(l_key, i);
+        END IF;
+        l_inner_hex := l_inner_hex || aes_byte_hex(bit_xor32(l_byte, 54));
+        l_outer_hex := l_outer_hex || aes_byte_hex(bit_xor32(l_byte, 92));
+      END;
+    END LOOP;
+    l_inner_pad := HEXTORAW(l_inner_hex);
+    l_outer_pad := HEXTORAW(l_outer_hex);
+    DBMS_LOB.CREATETEMPORARY(l_inner, TRUE);
+    DBMS_LOB.WRITEAPPEND(l_inner, 64, l_inner_pad);
+    IF p_data IS NOT NULL AND DBMS_LOB.GETLENGTH(p_data) > 0 THEN
+      DBMS_LOB.COPY(l_inner, p_data, DBMS_LOB.GETLENGTH(p_data), 65, 1);
+    END IF;
+    l_digest := hash_blob_sha256_internal(l_inner);
+    DBMS_LOB.CREATETEMPORARY(l_outer, TRUE);
+    DBMS_LOB.WRITEAPPEND(l_outer, 64, l_outer_pad);
+    l_result := HEXTORAW(l_digest);
+    DBMS_LOB.WRITEAPPEND(l_outer, 32, l_result);
+    l_digest := hash_blob_sha256_internal(l_outer);
+    l_result := HEXTORAW(l_digest);
+    DBMS_LOB.FREETEMPORARY(l_inner);
+    DBMS_LOB.FREETEMPORARY(l_outer);
+    RETURN l_result;
+  EXCEPTION
+    WHEN OTHERS THEN
+      IF DBMS_LOB.ISTEMPORARY(l_inner) = 1 THEN DBMS_LOB.FREETEMPORARY(l_inner); END IF;
+      IF DBMS_LOB.ISTEMPORARY(l_outer) = 1 THEN DBMS_LOB.FREETEMPORARY(l_outer); END IF;
+      RAISE;
+  END hmac_sha256_blob;
+
+  FUNCTION derive_mac_key(p_key RAW) RETURN RAW IS
+    l_material BLOB;
+    l_domain RAW(64) := UTL_I18N.STRING_TO_RAW('CRIPTOpack|AES-CBC|HMAC-SHA-256|v1', 'AL32UTF8');
+    l_result RAW(32);
+  BEGIN
+    DBMS_LOB.CREATETEMPORARY(l_material, TRUE);
+    DBMS_LOB.WRITEAPPEND(l_material, UTL_RAW.LENGTH(l_domain), l_domain);
+    l_result := hmac_sha256_blob(p_key, l_material);
+    DBMS_LOB.FREETEMPORARY(l_material);
+    RETURN l_result;
+  EXCEPTION
+    WHEN OTHERS THEN
+      IF DBMS_LOB.ISTEMPORARY(l_material) = 1 THEN DBMS_LOB.FREETEMPORARY(l_material); END IF;
+      RAISE;
+  END derive_mac_key;
+
+  FUNCTION authenticated_key_raw(p_key_text VARCHAR2, p_key_length PLS_INTEGER) RETURN RAW IS
+  BEGIN
+    RETURN aes_key_raw(p_key_text, 'Chave AES', p_key_length);
+  EXCEPTION
+    WHEN OTHERS THEN
+      RAISE_APPLICATION_ERROR(-20017, 'Envelope inválido ou autenticação não validada.');
+  END authenticated_key_raw;
+
+  FUNCTION aes_authenticated_encrypt_blob(
+    p_data BLOB, p_key RAW, p_iv RAW, p_key_length PLS_INTEGER
+  ) RETURN BLOB IS
+    l_cipher BLOB;
+    l_envelope BLOB;
+    l_header RAW(20) := HEXTORAW('43503101');
+    l_mac RAW(32);
+    l_length NUMBER;
+  BEGIN
+    validate_aes_key_iv(p_key, p_iv, p_key_length);
+    l_cipher := aes_encrypt_blob(p_data, p_key, p_iv, p_key_length);
+    DBMS_LOB.CREATETEMPORARY(l_envelope, TRUE);
+    DBMS_LOB.WRITEAPPEND(l_envelope, UTL_RAW.LENGTH(l_header), l_header);
+    DBMS_LOB.WRITEAPPEND(l_envelope, UTL_RAW.LENGTH(p_iv), p_iv);
+    l_length := DBMS_LOB.GETLENGTH(l_cipher);
+    IF l_length > 0 THEN
+      DBMS_LOB.COPY(l_envelope, l_cipher, l_length, 21, 1);
+    END IF;
+    l_mac := hmac_sha256_blob(derive_mac_key(p_key), l_envelope);
+    DBMS_LOB.WRITEAPPEND(l_envelope, UTL_RAW.LENGTH(l_mac), l_mac);
+    DBMS_LOB.FREETEMPORARY(l_cipher);
+    RETURN l_envelope;
+  EXCEPTION
+    WHEN OTHERS THEN
+      IF DBMS_LOB.ISTEMPORARY(l_cipher) = 1 THEN DBMS_LOB.FREETEMPORARY(l_cipher); END IF;
+      IF DBMS_LOB.ISTEMPORARY(l_envelope) = 1 THEN DBMS_LOB.FREETEMPORARY(l_envelope); END IF;
+      RAISE;
+  END aes_authenticated_encrypt_blob;
+
+  FUNCTION aes_authenticated_decrypt_blob(
+    p_envelope BLOB, p_key RAW, p_key_length PLS_INTEGER
+  ) RETURN BLOB IS
+    l_length NUMBER := NVL(DBMS_LOB.GETLENGTH(p_envelope), 0);
+    l_header RAW(4);
+    l_iv RAW(16);
+    l_cipher BLOB;
+    l_mac_input BLOB;
+    l_expected RAW(32);
+    l_supplied RAW(32);
+    l_diff PLS_INTEGER := 0;
+    l_plain BLOB;
+  BEGIN
+    IF NVL(UTL_RAW.LENGTH(p_key), 0) != p_key_length THEN
+      RAISE_APPLICATION_ERROR(-20017, 'Envelope inválido ou autenticação não validada.');
+    END IF;
+    IF l_length < 68 OR MOD(l_length - 52, 16) != 0 THEN
+      RAISE_APPLICATION_ERROR(-20017, 'Envelope inválido ou autenticação não validada.');
+    END IF;
+    l_header := DBMS_LOB.SUBSTR(p_envelope, 4, 1);
+    IF l_header != HEXTORAW('43503101') THEN
+      RAISE_APPLICATION_ERROR(-20017, 'Envelope inválido ou autenticação não validada.');
+    END IF;
+    l_iv := DBMS_LOB.SUBSTR(p_envelope, 16, 5);
+    DBMS_LOB.CREATETEMPORARY(l_mac_input, TRUE);
+    DBMS_LOB.COPY(l_mac_input, p_envelope, l_length - 32, 1, 1);
+    l_expected := hmac_sha256_blob(derive_mac_key(p_key), l_mac_input);
+    l_supplied := DBMS_LOB.SUBSTR(p_envelope, 32, l_length - 31);
+    FOR i IN 1 .. 32 LOOP
+      l_diff := l_diff + ABS(aes_byte(l_expected, i) - aes_byte(l_supplied, i));
+    END LOOP;
+    DBMS_LOB.FREETEMPORARY(l_mac_input);
+    IF l_diff != 0 THEN
+      RAISE_APPLICATION_ERROR(-20017, 'Envelope inválido ou autenticação não validada.');
+    END IF;
+
+    DBMS_LOB.CREATETEMPORARY(l_cipher, TRUE);
+    DBMS_LOB.COPY(l_cipher, p_envelope, l_length - 52, 1, 21);
+    BEGIN
+      l_plain := aes_decrypt_blob(l_cipher, p_key, l_iv, p_key_length);
+    EXCEPTION
+      WHEN OTHERS THEN
+        RAISE_APPLICATION_ERROR(-20017, 'Envelope inválido ou autenticação não validada.');
+    END;
+    DBMS_LOB.FREETEMPORARY(l_cipher);
+    RETURN l_plain;
+  EXCEPTION
+    WHEN OTHERS THEN
+      IF DBMS_LOB.ISTEMPORARY(l_cipher) = 1 THEN DBMS_LOB.FREETEMPORARY(l_cipher); END IF;
+      IF DBMS_LOB.ISTEMPORARY(l_mac_input) = 1 THEN DBMS_LOB.FREETEMPORARY(l_mac_input); END IF;
+      IF DBMS_LOB.ISTEMPORARY(l_plain) = 1 THEN DBMS_LOB.FREETEMPORARY(l_plain); END IF;
+      RAISE;
+  END aes_authenticated_decrypt_blob;
+
+  FUNCTION aes_authenticated_encrypt_text(
+    p_text VARCHAR2, p_key_text VARCHAR2, p_iv_text VARCHAR2, p_key_length PLS_INTEGER
+  ) RETURN VARCHAR2 IS
+    l_plain BLOB;
+    l_envelope BLOB;
+    l_hex CLOB;
+    l_result VARCHAR2(32767);
+  BEGIN
+    l_plain := aes_string_blob(p_text);
+    l_envelope := aes_authenticated_encrypt_blob(
+      l_plain, aes_key_raw(p_key_text, 'Chave AES', p_key_length),
+      aes_key_raw(p_iv_text, 'IV'), p_key_length
+    );
+    l_hex := aes_hex_blob(l_envelope);
+    IF DBMS_LOB.GETLENGTH(l_hex) > 32767 THEN
+      RAISE_APPLICATION_ERROR(-20016, 'Envelope excede o limite VARCHAR2; use a sobrecarga CLOB.');
+    END IF;
+    l_result := DBMS_LOB.SUBSTR(l_hex, 32767, 1);
+    DBMS_LOB.FREETEMPORARY(l_plain);
+    DBMS_LOB.FREETEMPORARY(l_envelope);
+    DBMS_LOB.FREETEMPORARY(l_hex);
+    RETURN l_result;
+  EXCEPTION
+    WHEN OTHERS THEN
+      IF DBMS_LOB.ISTEMPORARY(l_plain) = 1 THEN DBMS_LOB.FREETEMPORARY(l_plain); END IF;
+      IF DBMS_LOB.ISTEMPORARY(l_envelope) = 1 THEN DBMS_LOB.FREETEMPORARY(l_envelope); END IF;
+      IF DBMS_LOB.ISTEMPORARY(l_hex) = 1 THEN DBMS_LOB.FREETEMPORARY(l_hex); END IF;
+      RAISE;
+  END aes_authenticated_encrypt_text;
+
+  FUNCTION aes_authenticated_decrypt_text(
+    p_envelope_hex VARCHAR2, p_key_text VARCHAR2, p_key_length PLS_INTEGER
+  ) RETURN VARCHAR2 IS
+    l_hex CLOB;
+    l_envelope BLOB;
+    l_plain BLOB;
+    l_text CLOB;
+    l_result VARCHAR2(32767);
+    l_key RAW(32);
+  BEGIN
+    l_key := authenticated_key_raw(p_key_text, p_key_length);
+    DBMS_LOB.CREATETEMPORARY(l_hex, TRUE);
+    IF p_envelope_hex IS NOT NULL THEN
+      DBMS_LOB.WRITEAPPEND(l_hex, LENGTH(p_envelope_hex), p_envelope_hex);
+    END IF;
+    BEGIN
+      l_envelope := aes_unhex_clob(l_hex);
+    EXCEPTION
+      WHEN OTHERS THEN
+        RAISE_APPLICATION_ERROR(-20017, 'Envelope inválido ou autenticação não validada.');
+    END;
+    l_plain := aes_authenticated_decrypt_blob(
+      l_envelope, l_key, p_key_length
+    );
+    l_text := aes_blob_to_clob(l_plain);
+    IF DBMS_LOB.GETLENGTH(l_text) > 32767 THEN
+      RAISE_APPLICATION_ERROR(-20015, 'Texto excede limite VARCHAR2; use a sobrecarga CLOB.');
+    END IF;
+    l_result := DBMS_LOB.SUBSTR(l_text, 32767, 1);
+    DBMS_LOB.FREETEMPORARY(l_hex);
+    DBMS_LOB.FREETEMPORARY(l_envelope);
+    DBMS_LOB.FREETEMPORARY(l_plain);
+    DBMS_LOB.FREETEMPORARY(l_text);
+    RETURN l_result;
+  EXCEPTION
+    WHEN OTHERS THEN
+      IF DBMS_LOB.ISTEMPORARY(l_hex) = 1 THEN DBMS_LOB.FREETEMPORARY(l_hex); END IF;
+      IF DBMS_LOB.ISTEMPORARY(l_envelope) = 1 THEN DBMS_LOB.FREETEMPORARY(l_envelope); END IF;
+      IF DBMS_LOB.ISTEMPORARY(l_plain) = 1 THEN DBMS_LOB.FREETEMPORARY(l_plain); END IF;
+      IF DBMS_LOB.ISTEMPORARY(l_text) = 1 THEN DBMS_LOB.FREETEMPORARY(l_text); END IF;
+      RAISE;
+  END aes_authenticated_decrypt_text;
+
+  FUNCTION aes_authenticated_encrypt_clob(
+    p_text CLOB, p_key_text VARCHAR2, p_iv_text VARCHAR2, p_key_length PLS_INTEGER
+  ) RETURN CLOB IS
+    l_plain BLOB;
+    l_envelope BLOB;
+    l_result CLOB;
+  BEGIN
+    l_plain := aes_clob_to_blob(p_text);
+    l_envelope := aes_authenticated_encrypt_blob(
+      l_plain, aes_key_raw(p_key_text, 'Chave AES', p_key_length),
+      aes_key_raw(p_iv_text, 'IV'), p_key_length
+    );
+    l_result := aes_hex_blob(l_envelope);
+    DBMS_LOB.FREETEMPORARY(l_plain);
+    DBMS_LOB.FREETEMPORARY(l_envelope);
+    RETURN l_result;
+  EXCEPTION
+    WHEN OTHERS THEN
+      IF DBMS_LOB.ISTEMPORARY(l_plain) = 1 THEN DBMS_LOB.FREETEMPORARY(l_plain); END IF;
+      IF DBMS_LOB.ISTEMPORARY(l_envelope) = 1 THEN DBMS_LOB.FREETEMPORARY(l_envelope); END IF;
+      IF DBMS_LOB.ISTEMPORARY(l_result) = 1 THEN DBMS_LOB.FREETEMPORARY(l_result); END IF;
+      RAISE;
+  END aes_authenticated_encrypt_clob;
+
+  FUNCTION aes_authenticated_decrypt_clob(
+    p_envelope_hex CLOB, p_key_text VARCHAR2, p_key_length PLS_INTEGER
+  ) RETURN CLOB IS
+    l_envelope BLOB;
+    l_plain BLOB;
+    l_result CLOB;
+  BEGIN
+    l_envelope := aes_unhex_clob(p_envelope_hex);
+    l_plain := aes_authenticated_decrypt_blob(
+      l_envelope, authenticated_key_raw(p_key_text, p_key_length), p_key_length
+    );
+    l_result := aes_blob_to_clob(l_plain);
+    DBMS_LOB.FREETEMPORARY(l_envelope);
+    DBMS_LOB.FREETEMPORARY(l_plain);
+    RETURN l_result;
+  EXCEPTION
+    WHEN OTHERS THEN
+      IF DBMS_LOB.ISTEMPORARY(l_envelope) = 1 THEN DBMS_LOB.FREETEMPORARY(l_envelope); END IF;
+      IF DBMS_LOB.ISTEMPORARY(l_plain) = 1 THEN DBMS_LOB.FREETEMPORARY(l_plain); END IF;
+      IF DBMS_LOB.ISTEMPORARY(l_result) = 1 THEN DBMS_LOB.FREETEMPORARY(l_result); END IF;
+      IF SQLCODE NOT IN (-20017, -20009) THEN
+        RAISE_APPLICATION_ERROR(-20017, 'Envelope inválido ou autenticação não validada.');
+      END IF;
+      RAISE;
+  END aes_authenticated_decrypt_clob;
 
   FUNCTION aes_string_blob(p_text VARCHAR2) RETURN BLOB IS
     l_blob BLOB;
@@ -3194,5 +3478,101 @@ CREATE OR REPLACE PACKAGE BODY criptopack AS
       IF DBMS_LOB.ISTEMPORARY(l_plain) = 1 THEN DBMS_LOB.FREETEMPORARY(l_plain); END IF;
       RAISE;
   END descripto_aes256;
+
+  FUNCTION cripto_aes128_autenticado(p_texto_varchar2 IN VARCHAR2, p_chave IN VARCHAR2, p_iv IN VARCHAR2) RETURN VARCHAR2 IS
+  BEGIN
+    RETURN aes_authenticated_encrypt_text(p_texto_varchar2, p_chave, p_iv, 16);
+  END cripto_aes128_autenticado;
+
+  FUNCTION descripto_aes128_autenticado(p_envelope_varchar2 IN VARCHAR2, p_chave IN VARCHAR2) RETURN VARCHAR2 IS
+  BEGIN
+    RETURN aes_authenticated_decrypt_text(p_envelope_varchar2, p_chave, 16);
+  END descripto_aes128_autenticado;
+
+  FUNCTION cripto_aes128_autenticado(p_texto_clob IN CLOB, p_chave IN VARCHAR2, p_iv IN VARCHAR2) RETURN CLOB IS
+  BEGIN
+    RETURN aes_authenticated_encrypt_clob(p_texto_clob, p_chave, p_iv, 16);
+  END cripto_aes128_autenticado;
+
+  FUNCTION descripto_aes128_autenticado(p_envelope_clob IN CLOB, p_chave IN VARCHAR2) RETURN CLOB IS
+  BEGIN
+    RETURN aes_authenticated_decrypt_clob(p_envelope_clob, p_chave, 16);
+  END descripto_aes128_autenticado;
+
+  FUNCTION cripto_aes128_autenticado(p_texto_blob IN BLOB, p_chave IN VARCHAR2, p_iv IN VARCHAR2) RETURN BLOB IS
+  BEGIN
+    RETURN aes_authenticated_encrypt_blob(
+      p_texto_blob, aes_key_raw(p_chave, 'Chave AES', 16), aes_key_raw(p_iv, 'IV'), 16
+    );
+  END cripto_aes128_autenticado;
+
+  FUNCTION descripto_aes128_autenticado(p_envelope_blob IN BLOB, p_chave IN VARCHAR2) RETURN BLOB IS
+  BEGIN
+    RETURN aes_authenticated_decrypt_blob(p_envelope_blob, authenticated_key_raw(p_chave, 16), 16);
+  END descripto_aes128_autenticado;
+
+  FUNCTION cripto_aes192_autenticado(p_texto_varchar2 IN VARCHAR2, p_chave IN VARCHAR2, p_iv IN VARCHAR2) RETURN VARCHAR2 IS
+  BEGIN
+    RETURN aes_authenticated_encrypt_text(p_texto_varchar2, p_chave, p_iv, 24);
+  END cripto_aes192_autenticado;
+
+  FUNCTION descripto_aes192_autenticado(p_envelope_varchar2 IN VARCHAR2, p_chave IN VARCHAR2) RETURN VARCHAR2 IS
+  BEGIN
+    RETURN aes_authenticated_decrypt_text(p_envelope_varchar2, p_chave, 24);
+  END descripto_aes192_autenticado;
+
+  FUNCTION cripto_aes192_autenticado(p_texto_clob IN CLOB, p_chave IN VARCHAR2, p_iv IN VARCHAR2) RETURN CLOB IS
+  BEGIN
+    RETURN aes_authenticated_encrypt_clob(p_texto_clob, p_chave, p_iv, 24);
+  END cripto_aes192_autenticado;
+
+  FUNCTION descripto_aes192_autenticado(p_envelope_clob IN CLOB, p_chave IN VARCHAR2) RETURN CLOB IS
+  BEGIN
+    RETURN aes_authenticated_decrypt_clob(p_envelope_clob, p_chave, 24);
+  END descripto_aes192_autenticado;
+
+  FUNCTION cripto_aes192_autenticado(p_texto_blob IN BLOB, p_chave IN VARCHAR2, p_iv IN VARCHAR2) RETURN BLOB IS
+  BEGIN
+    RETURN aes_authenticated_encrypt_blob(
+      p_texto_blob, aes_key_raw(p_chave, 'Chave AES-192', 24), aes_key_raw(p_iv, 'IV'), 24
+    );
+  END cripto_aes192_autenticado;
+
+  FUNCTION descripto_aes192_autenticado(p_envelope_blob IN BLOB, p_chave IN VARCHAR2) RETURN BLOB IS
+  BEGIN
+    RETURN aes_authenticated_decrypt_blob(p_envelope_blob, authenticated_key_raw(p_chave, 24), 24);
+  END descripto_aes192_autenticado;
+
+  FUNCTION cripto_aes256_autenticado(p_texto_varchar2 IN VARCHAR2, p_chave IN VARCHAR2, p_iv IN VARCHAR2) RETURN VARCHAR2 IS
+  BEGIN
+    RETURN aes_authenticated_encrypt_text(p_texto_varchar2, p_chave, p_iv, 32);
+  END cripto_aes256_autenticado;
+
+  FUNCTION descripto_aes256_autenticado(p_envelope_varchar2 IN VARCHAR2, p_chave IN VARCHAR2) RETURN VARCHAR2 IS
+  BEGIN
+    RETURN aes_authenticated_decrypt_text(p_envelope_varchar2, p_chave, 32);
+  END descripto_aes256_autenticado;
+
+  FUNCTION cripto_aes256_autenticado(p_texto_clob IN CLOB, p_chave IN VARCHAR2, p_iv IN VARCHAR2) RETURN CLOB IS
+  BEGIN
+    RETURN aes_authenticated_encrypt_clob(p_texto_clob, p_chave, p_iv, 32);
+  END cripto_aes256_autenticado;
+
+  FUNCTION descripto_aes256_autenticado(p_envelope_clob IN CLOB, p_chave IN VARCHAR2) RETURN CLOB IS
+  BEGIN
+    RETURN aes_authenticated_decrypt_clob(p_envelope_clob, p_chave, 32);
+  END descripto_aes256_autenticado;
+
+  FUNCTION cripto_aes256_autenticado(p_texto_blob IN BLOB, p_chave IN VARCHAR2, p_iv IN VARCHAR2) RETURN BLOB IS
+  BEGIN
+    RETURN aes_authenticated_encrypt_blob(
+      p_texto_blob, aes_key_raw(p_chave, 'Chave AES-256', 32), aes_key_raw(p_iv, 'IV'), 32
+    );
+  END cripto_aes256_autenticado;
+
+  FUNCTION descripto_aes256_autenticado(p_envelope_blob IN BLOB, p_chave IN VARCHAR2) RETURN BLOB IS
+  BEGIN
+    RETURN aes_authenticated_decrypt_blob(p_envelope_blob, authenticated_key_raw(p_chave, 32), 32);
+  END descripto_aes256_autenticado;
 END criptopack;
 /

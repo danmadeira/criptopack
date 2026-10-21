@@ -1,20 +1,20 @@
 CREATE OR REPLACE PACKAGE criptopack AS
   /**
    * @author Daniel Madeira
-   * @version 1.0
+  * @version 1.1
    * @date 2026-10-21
    * @brief Descreve a API pública da package de hashes, CRC e criptografia AES.
    *
    * Disponibiliza MD5, SHA-1, SHA-256, SHA3-224, SHA3-256, SHA3-384,
    * SHA3-512, SHA-384, SHA-512 e CRC-32 para VARCHAR2, CLOB, BLOB e NUMBER.
-   * Expõe cifragem e decifragem AES-128,
-   * AES-192 e AES-256 em CBC com padding PKCS#7, usando VARCHAR2, CLOB,
-   * BLOB, NUMBER e RAW. Texto usa UTF-8; hashes e ciphertexts textuais
-   * são hexadecimais, enquanto os dados binários permanecem binários.
+  * Expõe cifragem e decifragem AES-128, AES-192 e AES-256 em CBC com
+  * padding PKCS#7, além de variantes autenticadas com HMAC-SHA-256.
+  * Texto usa UTF-8; hashes e ciphertexts textuais são hexadecimais,
+  * enquanto os dados binários permanecem binários.
    *
-   * AES exige chave de 16, 24 ou 32 bytes, conforme a variante, e IV CBC
-   * de 16 bytes. Use IV imprevisível e único por cifragem e proteja a
-   * integridade do ciphertext separadamente, pois CBC não autentica dados.
+  * AES exige chave de 16, 24 ou 32 bytes, conforme a variante, e IV CBC
+  * de 16 bytes. CBC legado não autentica dados; prefira os métodos com
+  * sufixo _autenticado, que verificam HMAC antes da decifragem.
    * Os hashes rápidos desta package não substituem KDF para senhas.
    *
    * @return Declarações públicas disponíveis em criptopack.
@@ -495,6 +495,32 @@ CREATE OR REPLACE PACKAGE criptopack AS
    * @return Dados descriptografados em RAW.
    */
   FUNCTION descripto_aes256(p_cifra_raw IN RAW, p_chave IN VARCHAR2, p_iv IN VARCHAR2) RETURN RAW;
+
+  /**
+   * @brief Cifra texto em envelope AES-CBC autenticado com HMAC-SHA-256.
+   * O envelope hexadecimal contém versão, IV, ciphertext e MAC; não requer
+   * IV no deciframento. Use chave aleatória de entropia adequada.
+   */
+  FUNCTION cripto_aes128_autenticado(p_texto_varchar2 IN VARCHAR2, p_chave IN VARCHAR2, p_iv IN VARCHAR2) RETURN VARCHAR2;
+  FUNCTION descripto_aes128_autenticado(p_envelope_varchar2 IN VARCHAR2, p_chave IN VARCHAR2) RETURN VARCHAR2;
+  FUNCTION cripto_aes128_autenticado(p_texto_clob IN CLOB, p_chave IN VARCHAR2, p_iv IN VARCHAR2) RETURN CLOB;
+  FUNCTION descripto_aes128_autenticado(p_envelope_clob IN CLOB, p_chave IN VARCHAR2) RETURN CLOB;
+  FUNCTION cripto_aes128_autenticado(p_texto_blob IN BLOB, p_chave IN VARCHAR2, p_iv IN VARCHAR2) RETURN BLOB;
+  FUNCTION descripto_aes128_autenticado(p_envelope_blob IN BLOB, p_chave IN VARCHAR2) RETURN BLOB;
+
+  FUNCTION cripto_aes192_autenticado(p_texto_varchar2 IN VARCHAR2, p_chave IN VARCHAR2, p_iv IN VARCHAR2) RETURN VARCHAR2;
+  FUNCTION descripto_aes192_autenticado(p_envelope_varchar2 IN VARCHAR2, p_chave IN VARCHAR2) RETURN VARCHAR2;
+  FUNCTION cripto_aes192_autenticado(p_texto_clob IN CLOB, p_chave IN VARCHAR2, p_iv IN VARCHAR2) RETURN CLOB;
+  FUNCTION descripto_aes192_autenticado(p_envelope_clob IN CLOB, p_chave IN VARCHAR2) RETURN CLOB;
+  FUNCTION cripto_aes192_autenticado(p_texto_blob IN BLOB, p_chave IN VARCHAR2, p_iv IN VARCHAR2) RETURN BLOB;
+  FUNCTION descripto_aes192_autenticado(p_envelope_blob IN BLOB, p_chave IN VARCHAR2) RETURN BLOB;
+
+  FUNCTION cripto_aes256_autenticado(p_texto_varchar2 IN VARCHAR2, p_chave IN VARCHAR2, p_iv IN VARCHAR2) RETURN VARCHAR2;
+  FUNCTION descripto_aes256_autenticado(p_envelope_varchar2 IN VARCHAR2, p_chave IN VARCHAR2) RETURN VARCHAR2;
+  FUNCTION cripto_aes256_autenticado(p_texto_clob IN CLOB, p_chave IN VARCHAR2, p_iv IN VARCHAR2) RETURN CLOB;
+  FUNCTION descripto_aes256_autenticado(p_envelope_clob IN CLOB, p_chave IN VARCHAR2) RETURN CLOB;
+  FUNCTION cripto_aes256_autenticado(p_texto_blob IN BLOB, p_chave IN VARCHAR2, p_iv IN VARCHAR2) RETURN BLOB;
+  FUNCTION descripto_aes256_autenticado(p_envelope_blob IN BLOB, p_chave IN VARCHAR2) RETURN BLOB;
 
 END criptopack;
 /

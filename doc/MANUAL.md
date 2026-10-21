@@ -1,4 +1,4 @@
-# Manual Completo - CRIPTOpack
+# Manual Completo - CRIPTOpack 1.1
 
 O **CRIPTOpack** é uma package nativa em PL/SQL para Oracle Database que provê funções de Hash, Checksum e Criptografia simétrica (AES), sem qualquer dependência da package `DBMS_CRYPTO`.
 
@@ -210,26 +210,44 @@ END;
 /
 ```
 
+### 3.4. Cifragem autenticada (recomendada para novos usos)
+As funções `cripto_aes128/192/256_autenticado` combinam AES-CBC/PKCS#7 com HMAC-SHA-256 no esquema *encrypt-then-MAC*. O MAC cobre o envelope inteiro e é verificado antes de qualquer decifragem ou validação de padding. O envelope é autocontido e versionado: bytes de cabeçalho (`CP1` e versão), IV de 16 bytes, ciphertext e MAC de 32 bytes. Nas sobrecargas `VARCHAR2` e `CLOB`, o envelope é hexadecimal; nas sobrecargas `BLOB`, é binário. A API oferece variantes para `VARCHAR2`, `CLOB` e `BLOB`.
+
+Use uma chave aleatória adequada ao tamanho AES (16, 24 ou 32 bytes UTF-8), não uma senha humana. Gere um IV criptograficamente imprevisível e único por operação; ele é informado na cifragem e armazenado no envelope. Os valores fixos abaixo são apenas ilustrativos, não os reutilize:
+
+```sql
+DECLARE
+  v_envelope VARCHAR2(32767);
+  v_texto    VARCHAR2(100);
+  v_chave    VARCHAR2(32) := 'ChaveAleatoriaDe32BytesParaDemo!';
+  v_iv       VARCHAR2(16) := 'IV-aleatorio-001';
+BEGIN
+  v_envelope := criptopack.cripto_aes256_autenticado(
+    p_texto_varchar2 => 'Mensagem autenticada',
+    p_chave => v_chave,
+    p_iv => v_iv
+  );
+  v_texto := criptopack.descripto_aes256_autenticado(
+    p_envelope_varchar2 => v_envelope,
+    p_chave => v_chave
+  );
+  DBMS_OUTPUT.PUT_LINE(v_texto);
+END;
+/
+```
+
+Em caso de envelope malformado, chave errada ou adulteração, a decifragem retorna o mesmo erro `ORA-20017`; o plaintext não é devolvido. Esse tratamento reduz a exposição de detalhes de padding. As funções CBC antigas continuam disponíveis por compatibilidade, mas não autenticam dados e não devem ser usadas sem uma camada de autenticação externa.
+
 ---
 
 ## 4. Boas Práticas de Segurança e Geração de IV/Chaves
 
-### 4.1. Geração Prática do IV (Vetor de Inicialização)
-No modo AES-CBC, **nunca reaproveite o mesmo IV** para cripografar dados diferentes com a mesma chave. O IV deve ter exatamente 16 bytes, ser imprevisível e **único por operação**.
+### 4.1. Geração e armazenamento do IV (Vetor de Inicialização)
+No modo AES-CBC, cada cifragem deve usar um IV **imprevisível e novo** para a mesma chave. O IV não é segredo e deve ser armazenado com o envelope/ciphertext para permitir a decifragem. Não derive o IV de `SYS_GUID()`, timestamps, sequências ou outros identificadores: eles não são fontes documentadas de aleatoriedade criptográfica. Também não converta `SYS_GUID()` de `RAW` para `VARCHAR2` com `UTL_RAW.CAST_TO_VARCHAR2`; isso não transforma bytes arbitrários em uma string UTF-8 preservando os 16 bytes.
 
-> **Nota:** O IV não é um segredo! Ele pode (e deve) ser armazenado no banco de dados junto ao texto cifrado para permitir a descriptografia futura.
+**Limitação da API atual:** `p_iv` é `VARCHAR2` e a package converte seu conteúdo para UTF-8, exigindo exatamente 16 bytes. Portanto, a representação hexadecimal de um IV de 16 bytes (32 caracteres) não pode ser passada diretamente como `p_iv`, e bytes aleatórios arbitrários podem não formar uma string UTF-8 válida. Até existir uma sobrecarga que aceite `RAW`, gere o IV fora do banco com um CSPRNG confiável e passe 16 caracteres ASCII aleatórios (cada caractere corresponde a um byte UTF-8). Armazene exatamente essa string junto ao ciphertext e use-a sem alterações na decifragem. Essa adaptação tem menos entropia que um IV binário de 128 bits; para requisitos que demandem a força completa do IV, use uma API com parâmetro `RAW` em vez de fabricar uma conversão de texto.
 
-Uma forma recomendada de gerar IVs únicos no Oracle sem requerer pacotes restritos é utilizando `SYS_GUID()`:
-
-```sql
-FUNCTION gerar_iv_unico RETURN VARCHAR2 IS
-BEGIN
-  -- SYS_GUID() gera 16 bytes RAW representados por 32 caracteres HEX.
-  -- Convertemos esses 16 bytes RAW em texto UTF-8 de 16 caracteres.
-  RETURN UTL_RAW.CAST_TO_VARCHAR2(HEXTORAW(SYS_GUID()));
-END;
-/
-```
+Exemplo de integração: a aplicação gera o IV com seu gerador criptográfico e o envia como bind, por exemplo `:iv_aleatorio_ascii` (16 caracteres ASCII). Não gere esse valor com SQL determinístico.
 
 ### 4.2. Armazenamento Seguro de Chaves
 * **Evite Hardcode:** Nunca insira chaves diretamente nos scripts SQL ou no código das triggers.
@@ -264,8 +282,11 @@ DECLARE
 BEGIN
   -- Criptografa apenas se um novo CPF não-nulo for fornecido
   IF :NEW.cpf_cifrado IS NOT NULL AND (:OLD.cpf_cifrado IS NULL OR :NEW.cpf_cifrado <> :OLD.cpf_cifrado) THEN
-    -- Gerar um IV imprevisível de 16 bytes via SYS_GUID
-    :NEW.iv_cpf := UTL_RAW.CAST_TO_VARCHAR2(HEXTORAW(SYS_GUID()));
+    -- A aplicação deve fornecer este IV por bind, gerado por CSPRNG.
+    -- O valor deve ter exatamente 16 caracteres ASCII e ser persistido.
+    IF :NEW.iv_cpf IS NULL OR LENGTHB(:NEW.iv_cpf) != 16 THEN
+      RAISE_APPLICATION_ERROR(-20004, 'Informe um IV aleatório de 16 bytes gerado pela aplicação.');
+    END IF;
     
     -- Substitui o texto claro pelo valor cifrado
     :NEW.cpf_cifrado := criptopack.cripto_aes256(:NEW.cpf_cifrado, c_chave, :NEW.iv_cpf);
@@ -292,7 +313,7 @@ FROM tb_clientes;
 
 ## 6. Tabela de Exceções e Tratamento de Erros
 
-A package dispara exceções com códigos entre `-20001` e `-20016` utilizando `RAISE_APPLICATION_ERROR`.
+A package dispara exceções com códigos entre `-20001` e `-20017` utilizando `RAISE_APPLICATION_ERROR`.
 
 | Código Error | Descrição / Causa |
 | :--- | :--- |
@@ -312,6 +333,7 @@ A package dispara exceções com códigos entre `-20001` e `-20016` utilizando `
 | **ORA-20014** | O contéudo descriptografado com o tipo 'NUMBER' informado não é um número decimal válido. |
 | **ORA-20015** | O texto descriptografado excede os 32.767 bytes do `VARCHAR2`. Use a sobrecarga `CLOB`. |
 | **ORA-20016** | O texto cifrado excede os 32.767 bytes do `VARCHAR2`. Use a sobrecarga `CLOB`. |
+| **ORA-20017** | Envelope autenticado inválido ou autenticação não validada. A mensagem é deliberadamente uniforme para falhas de formato, MAC e padding. |
 
 ### Exemplo de Captura de Erros em PL/SQL
 ```sql
@@ -342,6 +364,19 @@ END;
 
 * **Portabilidade vs. Velocidade:** Por ser uma solução em **PL/SQL nativo e puro** (sem o uso de bibliotecas compiladas em C do `DBMS_CRYPTO`), o `CRIPTOpack` oferece total autonomia e portabilidade em ambientes restritos.
 * **Volume de Dados:** Para colunas relacionais, registros pontuais e LOBs moderados, a performance é excelente. Caso precise cifrar arquivos LOB com centenas de megabytes ou gigabytes em lote, recomenda-se realizar o processamento em janelas/lotes para gerenciar o uso de memória temporária (`DBMS_LOB.CREATETEMPORARY`).
+
+## 8. Histórico de Versões
+
+### 1.1
+* Adicionadas funções AES-128/192/256 autenticadas com HMAC-SHA-256 no esquema Encrypt-then-MAC, com suporte a `VARCHAR2`, `CLOB` e `BLOB`.
+* Definido envelope versionado com cabeçalho, IV, ciphertext e MAC; a validação da autenticidade ocorre antes da decifragem e falhas de envelope usam erro uniforme.
+* Corrigida a orientação sobre IV: `SYS_GUID()` não deve ser tratado como gerador criptográfico; o IV deve vir de uma fonte CSPRNG e ser armazenado junto ao ciphertext.
+* Preservada a API anterior para compatibilidade.
+
+### 1.0
+* Primeira versão do manual e da package: hashes MD5, SHA-1, SHA-2, SHA-3 e checksum CRC-32/ISO-HDLC.
+* Documentadas as operações AES-128/192/256 em CBC com padding PKCS#7.
+* Documentados overloads para `VARCHAR2`, `CLOB`, `BLOB`, `NUMBER` e `RAW`, sem dependência de `DBMS_CRYPTO`.
 
 ---
 *Fim do Manual.*
